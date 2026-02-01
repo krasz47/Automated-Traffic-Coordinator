@@ -21,6 +21,45 @@ pub struct Aircraft {
     // Augmented fields
     pub phase: Phase,
     pub wake_category: WakeCategory,
+    pub category: Option<String>,
+    pub ground_state: Option<String>, // e.g., "OnStand", "Pushback", "Taxiing"
+    pub atc_message: Option<String>, // e.g., "Hold Short H1"
+    pub eta: Option<i64>, // Estimated Time of Arrival (timestamp)
+    pub distance: Option<f64>, // Distance to Touchdown (nm)
+    pub advisory: Option<String>, // e.g., "SLOW 160", "EXPEDITE"
+    pub hold_time: Option<i64>, // Timestamp when entered Holding state
+}
+
+impl Default for Aircraft {
+    fn default() -> Self {
+        Aircraft {
+            icao24: String::new(),
+            callsign: None,
+            origin_country: String::new(),
+            time_position: None,
+            last_contact: 0,
+            longitude: None,
+            latitude: None,
+            baro_altitude: None,
+            on_ground: false,
+            velocity: None,
+            true_track: None,
+            vertical_rate: None,
+            geo_altitude: None,
+            squawk: None,
+            spi: false,
+            position_source: 0,
+            phase: Phase::Unknown,
+            wake_category: WakeCategory::Unknown,
+            category: None,
+            ground_state: None,
+            atc_message: None,
+            eta: None,
+            distance: None,
+            advisory: None,
+            hold_time: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -6,6 +6,12 @@ pub fn determine_phase(
     prev_state: Option<&AircraftState>, 
     zones: &AirportZones
 ) -> Phase {
+    if let Some(cat) = &aircraft.category {
+        if cat.starts_with('C') {
+            return Phase::TaxiIn; // Simplification: Ground vehicles are always "Taxiing" or "OnBlock"
+        }
+    }
+
     if !aircraft.on_ground {
         // Airborne Logic
         let alt = aircraft.baro_altitude.unwrap_or(0.0);

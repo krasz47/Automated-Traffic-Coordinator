@@ -41,4 +41,11 @@ export interface Aircraft {
     // Augmented
     phase: Phase;
     wake_category: WakeCategory;
+    category?: string;
+    ground_state?: string;
+    atc_message?: string;
+    eta?: number;
+    distance?: number;
+    advisory?: string;
+    hold_time?: number;
 }

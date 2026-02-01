@@ -34,10 +34,20 @@ const GanttTimeline: React.FC<TimelineProps> = ({ aircraft }) => {
                 {/* Time Axis (Mock) */}
                 <div style={{ position: 'absolute', top: 0, bottom: 0, left: '50px', width: '2px', background: '#555' }}></div>
 
-                {sorted.map((ac, idx) => {
-                    // Mock calculation of ETA slot
-                    // Assume 1000ft ~= 3 mins for visualization spacing, just purely visual for now
-                    const topOffset = 20 + (idx * 60);
+                {sorted.map((ac) => {
+                    // ETA Calculation: Time = Distance / Speed
+                    // Dist is in deg lat/lon approx. Need to convert to NM.
+                    // 1 deg lat ~= 60nm.
+                    // ETA (mins) = (Dist(nm) / Speed(kts)) * 60
+                    const dLat = (ac.latitude || 0) - 51.885;
+                    const dLon = (ac.longitude || 0) - 0.235;
+                    const distDeg = Math.sqrt(dLat * dLat + dLon * dLon);
+                    const distNm = distDeg * 60;
+                    const speed = ac.velocity || 140; // Default to approach speed if 0/unknown
+                    const etaMins = (distNm / (speed < 10 ? 140 : speed)) * 60;
+
+                    // Visualization scaling: 1 min = 20px
+                    const topOffset = etaMins * 20;
 
                     return (
                         <div key={ac.icao24} style={{
@@ -56,7 +66,7 @@ const GanttTimeline: React.FC<TimelineProps> = ({ aircraft }) => {
                             <div style={{ fontWeight: 'bold' }}>{ac.callsign || ac.icao24}</div>
                             <div>{ac.phase} | {ac.wake_category}</div>
                             <div style={{ position: 'absolute', right: '4px', top: '4px', fontSize: '0.7em', color: '#aaa' }}>
-                                ETA {(idx * 2) + 1}m
+                                {etaMins.toFixed(1)}m
                             </div>
                         </div>
                     );
