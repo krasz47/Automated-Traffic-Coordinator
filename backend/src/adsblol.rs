@@ -36,8 +36,8 @@ impl AdsbLolClient {
         }
     }
 
-    pub async fn fetch_aircraft(&self, lat: f64, lon: f64, radius_nm: u32) -> Result<Vec<Aircraft>, Box<dyn Error>> {
-        let url = format!("{}/point/{}/{}/{}", self.base_url, lat, lon, radius_nm);
+    pub async fn fetch_aircraft(&self, center_lat: f64, center_lon: f64, radius_nm: u32) -> Result<Vec<Aircraft>, Box<dyn Error>> {
+        let url = format!("{}/point/{}/{}/{}", self.base_url, center_lat, center_lon, radius_nm);
         
         let resp_text = self.client.get(&url)
             .send()
@@ -68,17 +68,30 @@ impl AdsbLolClient {
             }
         }
 
-        let aircraft_list = response.ac.unwrap_or_default().into_iter().map(|s| {
+        let aircraft_list: Vec<Aircraft> = response.ac.unwrap_or_default().into_iter().filter_map(|s| {
+            let ac_lat = s.lat?;
+            let ac_lon = s.lon?;
+            
+            // Distance Calculation (Data Quality)
+            let dist_km = crate::logic::geofence::haversine_distance(center_lat, center_lon, ac_lat, ac_lon);
+            let dist_nm = dist_km / 1.852;
+
+            // Sanity Check / Filter: Discard if > Radius + Buffer (e.g. 2x radius or 50nm min)
+            let max_radius = (radius_nm as f64 * 2.0).max(50.0);
+            if dist_nm > max_radius {
+                return None;
+            }
+
             let (baro_alt, on_ground_flag) = parse_alt(&s.alt_baro);
             
-            Aircraft {
+            Some(Aircraft {
                 icao24: s.hex,
                 callsign: s.flight.map(|c| c.trim().to_string()),
                 origin_country: "Unknown".to_string(), // API doesn't allow easy country lookup without db
-                time_position: None, // API doesn't send timestamp per plane usually, assume NOW
+                time_position: None,
                 last_contact: chrono::Utc::now().timestamp(),
-                longitude: s.lon,
-                latitude: s.lat,
+                longitude: Some(ac_lon),
+                latitude: Some(ac_lat),
                 baro_altitude: baro_alt,
                 on_ground: on_ground_flag, // Logic can be improved
                 velocity: s.gs,
@@ -94,10 +107,10 @@ impl AdsbLolClient {
                 ground_state: None,
                 atc_message: None,
                 eta: None,
-                distance: None,
+                distance: Some(dist_nm), // Populated!
                 advisory: None,
                 hold_time: None,
-            }
+            })
         }).collect();
 
         Ok(aircraft_list)

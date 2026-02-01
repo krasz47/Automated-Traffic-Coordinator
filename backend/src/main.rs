@@ -23,12 +23,18 @@ use crate::logic::phases::determine_phase;
 use crate::logic::airport::{load_airport_data, AirportData};
 use crate::logic::sequencing::{process_ground_traffic, RunwayContext};
 
+#[derive(serde::Deserialize)]
+struct SetAirportRequest {
+    code: String,
+}
+
 struct AppState {
     aircraft: Mutex<HashMap<String, Aircraft>>,
     history: Mutex<HashMap<String, AircraftState>>,
     config: Config,
     airport_data: Option<Arc<AirportData>>,
     runway_context: Mutex<RunwayContext>,
+    active_airport: Mutex<Option<String>>,
 }
 
 #[tokio::main]
@@ -46,6 +52,7 @@ async fn main() {
         config: config.clone(),
         airport_data: airport_data.clone(),
         runway_context: Mutex::new(RunwayContext::default()),
+        active_airport: Mutex::new(None),
     });
 
     // Start Poller
@@ -59,101 +66,107 @@ async fn main() {
         loop {
             interval.tick().await;
             
-            let mut all_fetched_aircraft = Vec::new();
+            // 1. Determine Active Airport
+            let active_code = {
+                let lock = poller_state.active_airport.lock().unwrap();
+                lock.clone()
+            };
 
-            for airport in &poller_state.config.airports {
-                match client.fetch_aircraft(airport.lat, airport.lon, airport.radius).await {
-                    Ok(planes) => {
-                         let planes_with_context: Vec<Aircraft> = planes.into_iter().filter_map(|mut p| {
-                             if p.origin_country == "Unknown" {
-                                 p.origin_country = airport.code.clone();
-                             }
-                             
-                             // 1. Spurious Ground Filter
-                             // If on ground, must be within 3nm (approx 5.5km) of airport center
-                             if p.on_ground {
-                                 if let (Some(lat), Some(lon)) = (p.latitude, p.longitude) {
-                                     let dist_km = haversine_distance(lat, lon, airport.lat, airport.lon);
-                                     if dist_km > 5.5 {
-                                         // Too far, likely at a small airfield nearby or spurious
-                                         return None;
+            if let Some(target_code) = active_code {
+                // Find config
+                if let Some(airport) = poller_state.config.airports.iter().find(|a| a.code == target_code) {
+                     match client.fetch_aircraft(airport.lat, airport.lon, airport.radius).await {
+                        Ok(planes) => {
+                             let planes_with_context: Vec<Aircraft> = planes.into_iter().filter_map(|mut p| {
+                                 if p.origin_country == "Unknown" {
+                                     p.origin_country = airport.code.clone();
+                                 }
+                                 
+                                 // Spurious Ground Filter
+                                 if p.on_ground {
+                                     if let (Some(lat), Some(lon)) = (p.latitude, p.longitude) {
+                                         let dist_km = haversine_distance(lat, lon, airport.lat, airport.lon);
+                                         if dist_km > 5.5 {
+                                             return None;
+                                         }
                                      }
                                  }
-                             }
-
-                             Some(p)
-                         }).collect();
-                        
-                        all_fetched_aircraft.extend(planes_with_context);
-                    },
-                    Err(e) => {
-                        eprintln!("Error fetching for {}: {}", airport.code, e);
-                    }
-                }
-            }
-
-            if !all_fetched_aircraft.is_empty() {
-                let mut ac_lock = poller_state.aircraft.lock().unwrap();
-                let mut hist_lock = poller_state.history.lock().unwrap();
-                
-                let now_ts = chrono::Utc::now().timestamp();
-                
-                for mut plane in all_fetched_aircraft {
-                    // Get history
-                    let prev = hist_lock.get(&plane.icao24);
-                    
-                    // Determine Phase
-                    let phase = determine_phase(&plane, prev, &zones);
-                    plane.phase = phase; 
-                    
-                    // Maintain Ground State
-                    if let Some(existing) = ac_lock.get(&plane.icao24) {
-                        plane.ground_state = existing.ground_state.clone();
-                        plane.atc_message = existing.atc_message.clone();
-                    }
-
-                    // 2. Calculate ETA / DME for Arrivals
-                    if phase == crate::models::Phase::Approach || phase == crate::models::Phase::Final {
-                        if let (Some(lat), Some(lon), Some(spd)) = (plane.latitude, plane.longitude, plane.velocity) {
-                            if spd > 10.0 {
-                                // Default to EGSS center if we don't know which airport specifically (or use nearest form config)
-                                // Ideally we map plane -> airport. For now, use the first airport in config or EGSS hardcoded.
-                                let target_lat = 51.885;
-                                let target_lon = 0.235; 
+                                 Some(p)
+                             }).collect();
+                            
+                            // UPDATE STATE
+                            let mut ac_lock = poller_state.aircraft.lock().unwrap();
+                            let mut hist_lock = poller_state.history.lock().unwrap();
+                            
+                            // Prune aircraft NOT in the new list (Full Sync) to handle switching cleanly
+                            // Or just standard update. 
+                            // Better: prune anything not updated in this cycle if we want strict sync, 
+                            // but standard logic prune stale (>60s) is defined below. 
+                            // However, if we switched airport, we want to clear old ones. 
+                            // The handler does the clear, so here we just update.
+                            
+                            let now_ts = chrono::Utc::now().timestamp();
+                            
+                            for mut plane in planes_with_context {
+                                // Get history
+                                let prev = hist_lock.get(&plane.icao24);
                                 
-                                let dist_km = haversine_distance(lat, lon, target_lat, target_lon);
-                                let dist_nm = dist_km * 0.539957;
-                                plane.distance = Some(dist_nm);
+                                // Determine Phase
+                                let phase = determine_phase(&plane, prev, &zones);
+                                plane.phase = phase; 
                                 
-                                let time_hours = dist_nm / spd;
-                                let time_seconds = time_hours * 3600.0;
-                                plane.eta = Some(now_ts + time_seconds as i64);
+                                // Maintain Ground State
+                                if let Some(existing) = ac_lock.get(&plane.icao24) {
+                                    plane.ground_state = existing.ground_state.clone();
+                                    plane.atc_message = existing.atc_message.clone();
+                                }
+
+                                // Calculate ETA / DME
+                                if phase == crate::models::Phase::Approach || phase == crate::models::Phase::Final {
+                                    if let (Some(lat), Some(lon), Some(spd)) = (plane.latitude, plane.longitude, plane.velocity) {
+                                        if spd > 10.0 {
+                                            let dist_km = haversine_distance(lat, lon, airport.lat, airport.lon);
+                                            let dist_nm = dist_km * 0.539957;
+                                            plane.distance = Some(dist_nm);
+                                            
+                                            let time_hours = dist_nm / spd;
+                                            let time_seconds = time_hours * 3600.0;
+                                            plane.eta = Some(now_ts + time_seconds as i64);
+                                        }
+                                    }
+                                }
+                                
+                                // Update History
+                                let state_entry = AircraftState {
+                                    icao24: plane.icao24.clone(),
+                                    phase,
+                                    last_update: now_ts,
+                                };
+                                hist_lock.insert(plane.icao24.clone(), state_entry);
+                                
+                                // Update Current View
+                                ac_lock.insert(plane.icao24.clone(), plane);
                             }
+
+                            // Prune stale aircraft (> 60s)
+                            ac_lock.retain(|_, ac| {
+                                (now_ts - ac.last_contact) < 60
+                            });
+                            
+                            // Ground Logic
+                            if let Some(ad) = &poller_state.airport_data {
+                                let mut ctx_lock = poller_state.runway_context.lock().unwrap();
+                                process_ground_traffic(&mut ac_lock, ad, &mut ctx_lock);
+                            }
+
+                        },
+                        Err(e) => {
+                            eprintln!("Error fetching for {}: {}", target_code, e);
                         }
                     }
-                    
-                    // Update History
-                    let state_entry = AircraftState {
-                        icao24: plane.icao24.clone(),
-                        phase,
-                        last_update: now_ts,
-                    };
-                    hist_lock.insert(plane.icao24.clone(), state_entry);
-                    
-                    // Update Current View
-                    ac_lock.insert(plane.icao24.clone(), plane);
                 }
-
-                // Prune stale aircraft (> 60s)
-                ac_lock.retain(|_, ac| {
-                    (now_ts - ac.last_contact) < 60
-                });
-                
-                // --- GROUND LOGIC SEQUENCING ---
-                if let Some(ad) = &poller_state.airport_data {
-                    let mut ctx_lock = poller_state.runway_context.lock().unwrap();
-                    process_ground_traffic(&mut ac_lock, ad, &mut ctx_lock);
-                }
+            } else {
+                // No airport selected, do nothing or sleep longer
             }
         }
     });
@@ -161,6 +174,7 @@ async fn main() {
     // Start Server
     let app = Router::new()
         .route("/api/states", get(get_states))
+        .route("/api/airport", axum::routing::post(set_active_airport))
         .layer(CorsLayer::permissive())
         .with_state(state.clone());
 
@@ -173,4 +187,31 @@ async fn main() {
 async fn get_states(State(state): State<Arc<AppState>>) -> Json<Vec<Aircraft>> {
     let lock = state.aircraft.lock().unwrap();
     Json(lock.values().cloned().collect())
+}
+
+async fn set_active_airport(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<SetAirportRequest>,
+) -> Json<String> {
+    println!("Switching active airport to: {}", payload.code);
+    
+    // 1. Set Active Code
+    {
+        let mut lock = state.active_airport.lock().unwrap();
+        *lock = Some(payload.code.clone());
+    }
+
+    // 2. Clear existing state to prevent ghost planes
+    {
+        let mut history_lock = state.history.lock().unwrap();
+        history_lock.clear();
+        
+        let mut ac_lock = state.aircraft.lock().unwrap();
+        ac_lock.clear();
+        
+        let mut ctx_lock = state.runway_context.lock().unwrap();
+        *ctx_lock = RunwayContext::default();
+    }
+
+    Json("OK".to_string())
 }

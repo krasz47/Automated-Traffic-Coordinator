@@ -72,11 +72,21 @@ const createPlaneIcon = (track: number, altitude: number, isHighDensity: boolean
 
 interface MapProps {
     aircraft: Aircraft[];
+    activeAirport: string;
     onSelect?: (ac: Aircraft) => void;
 }
 
 const AIRPORTS = {
     EGSS: { name: "Stansted (EGSS)", center: [51.885, 0.235] as [number, number], zoom: 14 },
+    KLAX: { name: "Los Angeles (KLAX)", center: [33.942, -118.407] as [number, number], zoom: 13 },
+    EGLL: { name: "London Heathrow (EGLL)", center: [51.470, -0.454] as [number, number], zoom: 13 },
+    KJFK: { name: "New York JFK (KJFK)", center: [40.641, -73.778] as [number, number], zoom: 13 },
+    OMDB: { name: "Dubai Intl (OMDB)", center: [25.253, 55.365] as [number, number], zoom: 13 },
+    RJTT: { name: "Tokyo Haneda (RJTT)", center: [35.549, 139.779] as [number, number], zoom: 13 },
+    LFPG: { name: "Paris CDG (LFPG)", center: [49.009, 2.556] as [number, number], zoom: 13 },
+    EHAM: { name: "Amsterdam Schiphol (EHAM)", center: [52.310, 4.768] as [number, number], zoom: 13 },
+    EDDF: { name: "Frankfurt (EDDF)", center: [50.037, 8.562] as [number, number], zoom: 13 },
+    WSSS: { name: "Singapore Changi (WSSS)", center: [1.364, 103.991] as [number, number], zoom: 13 },
 };
 
 function SetViewOnClick({ center, zoom }: { center: [number, number], zoom: number }) {
@@ -87,9 +97,8 @@ function SetViewOnClick({ center, zoom }: { center: [number, number], zoom: numb
     return null;
 }
 
-const MapComponent: React.FC<MapProps> = ({ aircraft, onSelect }) => {
+const MapComponent: React.FC<MapProps> = ({ aircraft, activeAirport, onSelect }) => {
     const [trails, setTrails] = useState<{ [icao: string]: [number, number][] }>({});
-    const [activeAirportKey, setActiveAirportKey] = useState<keyof typeof AIRPORTS>('EGSS');
 
     // Map Data State
     const [mapData, setMapData] = useState<{ taxiways: any[], holds: any[], stands: any[] }>({ taxiways: [], holds: [], stands: [] });
@@ -98,16 +107,13 @@ const MapComponent: React.FC<MapProps> = ({ aircraft, onSelect }) => {
 
     useEffect(() => {
         // @ts-ignore
-        const data = airportDataRaw[activeAirportKey];
+        const data = airportDataRaw[activeAirport];
         if (data) {
             setMapData(data);
         } else {
             setMapData({ taxiways: [], holds: [], stands: [] });
         }
-    }, [activeAirportKey]);
-
-    const [searchTerm, setSearchTerm] = useState("");
-    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    }, [activeAirport]);
 
     // Trail Logic
     useEffect(() => {
@@ -128,7 +134,7 @@ const MapComponent: React.FC<MapProps> = ({ aircraft, onSelect }) => {
         });
     }, [aircraft]);
 
-    // State for Last Known Headings (to fix rotation when stopped)
+    // State for Last Known Headings
     const [lastHeadings, setLastHeadings] = useState<{ [icao: string]: number }>({});
 
     // Command Feed State
@@ -141,7 +147,6 @@ const MapComponent: React.FC<MapProps> = ({ aircraft, onSelect }) => {
         setOccupancyTimes(prev => {
             const next = { ...prev };
             const activeIcaos = new Set();
-
             aircraft.forEach(ac => {
                 activeIcaos.add(ac.icao24);
                 const isOnRunway = ac.phase === 'TakeOff' || ac.phase === 'Landing';
@@ -153,12 +158,9 @@ const MapComponent: React.FC<MapProps> = ({ aircraft, onSelect }) => {
                     delete next[ac.icao24];
                 }
             });
-
-            // Cleanup missing
             Object.keys(next).forEach(k => {
                 if (!activeIcaos.has(k)) delete next[k];
             });
-
             return next;
         });
     }, [aircraft]);
@@ -177,7 +179,6 @@ const MapComponent: React.FC<MapProps> = ({ aircraft, onSelect }) => {
                 setCommandLog(prev => {
                     const lastMsg = prev.find(p => p.callsign === (ac.callsign || ac.icao24));
                     if (lastMsg && lastMsg.msg === ac.atc_message) return prev;
-
                     const newEntry = {
                         callsign: ac.callsign || ac.icao24,
                         msg: ac.atc_message || "",
@@ -194,11 +195,6 @@ const MapComponent: React.FC<MapProps> = ({ aircraft, onSelect }) => {
         return aircraft
             .filter(ac => (ac.phase === 'Approach' || ac.phase === 'Final') && ac.distance !== undefined)
             .sort((a, b) => (a.distance || 999) - (b.distance || 999));
-    }, [aircraft]);
-
-    // Emergency Detection
-    const emergencyAc = useMemo(() => {
-        return aircraft.find(ac => ['7500', '7600', '7700'].includes(ac.squawk || ""));
     }, [aircraft]);
 
     // Update Last Headings
@@ -225,23 +221,12 @@ const MapComponent: React.FC<MapProps> = ({ aircraft, onSelect }) => {
         });
     }, [aircraft, trails]);
 
-    const filteredAirports = useMemo(() => {
-        return Object.entries(AIRPORTS).filter(([key, val]) => {
-            const term = searchTerm.toLowerCase();
-            return val.name.toLowerCase().includes(term) || key.toLowerCase().includes(term);
-        });
-    }, [searchTerm]);
-
-    const handleSelectAirport = (key: string) => {
-        setActiveAirportKey(key as keyof typeof AIRPORTS);
-        setSearchTerm(AIRPORTS[key as keyof typeof AIRPORTS].name);
-        setIsDropdownOpen(false);
-    };
+    const airportConfig = AIRPORTS[activeAirport as keyof typeof AIRPORTS] || AIRPORTS['EGSS'];
 
     return (
-        <MapContainer center={AIRPORTS[activeAirportKey].center} zoom={AIRPORTS[activeAirportKey].zoom} style={{ height: "100%", width: "100%" }}>
+        <MapContainer center={airportConfig.center} zoom={airportConfig.zoom} style={{ height: "100%", width: "100%" }}>
 
-            <SetViewOnClick center={AIRPORTS[activeAirportKey].center} zoom={AIRPORTS[activeAirportKey].zoom} />
+            <SetViewOnClick center={airportConfig.center} zoom={airportConfig.zoom} />
 
             <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
@@ -249,48 +234,19 @@ const MapComponent: React.FC<MapProps> = ({ aircraft, onSelect }) => {
             />
 
             {/* Emergency Banner */}
-            {emergencyAc && (
+            {aircraft.find(ac => ['7500', '7600', '7700'].includes(ac.squawk || "")) && (
                 <div style={{
                     position: 'absolute', top: '10px', left: '50%', transform: 'translateX(-50%)',
                     zIndex: 2000, backgroundColor: 'red', color: 'white', fontWeight: 'bold',
                     padding: '10px 20px', borderRadius: '4px', boxShadow: '0 0 10px rgba(255,0,0,0.8)',
                     animation: 'blink 1s linear infinite'
                 }}>
-                    ⚠️ EMERGENCY REPORTED: {emergencyAc.callsign || emergencyAc.icao24} (Squawk {emergencyAc.squawk})
-                    <style>{`
-                        @keyframes blink { 50% { opacity: 0.5; } }
-                    `}</style>
+                    ⚠️ EMERGENCY REPORTED: {aircraft.find(ac => ['7500', '7600', '7700'].includes(ac.squawk || ""))?.callsign}
                 </div>
             )}
 
             {/* UI: Top Right Controls */}
             <div className="leaflet-top leaflet-right" style={{ pointerEvents: 'auto', marginTop: '10px', marginRight: '10px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', zIndex: 1000 }}>
-                {/* Search */}
-                <div style={{ position: 'relative', marginBottom: '10px' }}>
-                    <input
-                        type="text"
-                        placeholder="Search Airport..."
-                        value={searchTerm}
-                        onChange={(e) => { setSearchTerm(e.target.value); setIsDropdownOpen(true); }}
-                        onFocus={() => setIsDropdownOpen(true)}
-                        style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#222', color: 'white', width: '200px' }}
-                    />
-                    {isDropdownOpen && filteredAirports.length > 0 && (
-                        <div style={{ position: 'absolute', top: '100%', right: 0, backgroundColor: '#222', border: '1px solid #444', width: '200px', borderRadius: '4px', marginTop: '2px' }}>
-                            {filteredAirports.map(([key, val]) => (
-                                <div
-                                    key={key}
-                                    onClick={() => handleSelectAirport(key)}
-                                    style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #333', color: '#ddd' }}
-                                    className="hover:bg-gray-700"
-                                >
-                                    {val.name}
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
                 {/* Toggles */}
                 <div style={{ backgroundColor: 'rgba(0,0,0,0.6)', padding: '5px', borderRadius: '4px' }}>
                     <label style={{ color: 'white', display: 'block', cursor: 'pointer' }}>
@@ -379,7 +335,7 @@ const MapComponent: React.FC<MapProps> = ({ aircraft, onSelect }) => {
             </div>
 
             {/* AIRPORT INFRASTRUCTURE */}
-            {activeAirportKey === 'EGSS' && (
+            {activeAirport === 'EGSS' && (
                 <>
                     {/* Runway Outline */}
                     <Polyline positions={[[51.875, 0.220], [51.895, 0.250]]} color={'#ffffff'} weight={4} opacity={0.3} />
