@@ -28,6 +28,7 @@ function App() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filteredAirports, setFilteredAirports] = useState(AIRPORT_DB);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
 
   useEffect(() => {
     // Filter logic
@@ -104,47 +105,52 @@ function App() {
       }}>
         <div style={{ textAlign: 'center', marginBottom: '3rem', animation: 'fadeIn 0.8s ease-out' }}>
           <h1 style={{
-            fontSize: '3.5rem', margin: '0 0 0.5rem 0', fontWeight: '800',
-            background: 'linear-gradient(90deg, #00bcd4, #2196f3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'
+            fontSize: '2.5rem', margin: '0 0 1rem 0', fontWeight: '300', letterSpacing: '-1px',
+            color: '#ffffff'
           }}>
             Automated Traffic Coordination
           </h1>
-          <p style={{ fontSize: '1.2rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
-            Global Airspace Monitoring System
+          <p style={{ fontSize: '0.9rem', color: '#888', letterSpacing: '3px', textTransform: 'uppercase' }}>
+            Flight Monitoring System
           </p>
         </div>
 
-        <div style={{ width: '100%', maxWidth: '600px', position: 'relative', animation: 'slideUp 0.6s ease-out 0.2s backwards' }}>
+        <div style={{ width: '100%', maxWidth: '500px', position: 'relative', animation: 'slideUp 0.6s ease-out 0.2s backwards' }}>
+          {/* Minimal Search Input */}
           <div style={{
             position: 'relative', display: 'flex', alignItems: 'center',
-            background: 'rgba(30, 30, 35, 0.8)', padding: '0 20px', borderRadius: '16px',
-            border: '1px solid rgba(255, 255, 255, 0.1)', boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
-            backdropFilter: 'blur(10px)'
+            borderBottom: isSearchFocused ? '1px solid #fff' : '1px solid rgba(255, 255, 255, 0.2)',
+            transition: 'border-color 0.3s ease',
+            paddingBottom: '8px'
           }}>
-            <span style={{ fontSize: '1.5rem', color: '#666', marginRight: '15px' }}></span>
+            <span style={{ fontSize: '1.2rem', color: isSearchFocused ? '#fff' : '#666', marginRight: '10px', transition: 'color 0.3s' }}>✈</span>
             <input
               type="text"
-              placeholder="Search airport (e.g. 'London', 'KLAX')..."
+              placeholder="Search airport..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && filteredAirports.length > 0) {
                   selectAirport(filteredAirports[selectedIndex].code);
                 }
               }}
               style={{
-                width: '100%', padding: '24px 0', background: 'transparent', border: 'none',
-                color: 'white', fontSize: '1.2rem', outline: 'none'
+                width: '100%', background: 'transparent', border: 'none',
+                color: 'white', fontSize: '1.5rem', outline: 'none', fontWeight: '300'
               }}
-              autoFocus
             />
           </div>
 
-          {/* Results Dropdown */}
+          {/* Minimal Dropdown - Only visible on search focus */}
           <div style={{
-            marginTop: '15px', background: 'rgba(30,30,35, 0.95)', borderRadius: '12px',
-            overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)',
-            maxHeight: '400px', overflowY: 'auto', backdropFilter: 'blur(20px)'
+            marginTop: '10px',
+            opacity: isSearchFocused ? 1 : 0,
+            pointerEvents: isSearchFocused ? 'auto' : 'none',
+            transform: isSearchFocused ? 'translateY(0)' : 'translateY(-10px)',
+            transition: 'all 0.2s ease',
+            maxHeight: '300px', overflowY: 'auto'
           }}>
             {filteredAirports.map((ap, idx) => (
               <div
@@ -152,17 +158,16 @@ function App() {
                 onClick={() => selectAirport(ap.code)}
                 onMouseEnter={() => setSelectedIndex(idx)}
                 style={{
-                  padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  cursor: 'pointer', transition: 'background 0.2s',
-                  backgroundColor: idx === selectedIndex ? 'rgba(33, 150, 243, 0.2)' : 'transparent',
-                  borderLeft: idx === selectedIndex ? '4px solid #2196f3' : '4px solid transparent'
+                  padding: '12px 0',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  borderBottom: '1px solid rgba(255,255,255,0.05)',
+                  color: idx === selectedIndex ? '#fff' : '#888',
+                  transition: 'color 0.2s'
                 }}
               >
-                <div>
-                  <div style={{ fontSize: '1.1rem', fontWeight: '600', color: idx === selectedIndex ? '#fff' : '#ddd' }}>{ap.name}</div>
-                  <div style={{ fontSize: '0.9rem', color: '#666' }}>{ap.country}</div>
-                </div>
-                <div style={{ color: '#444', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '1.2rem' }}>{ap.code}</div>
+                <div style={{ fontSize: '1rem' }}>{ap.name}, <span style={{ opacity: 0.5 }}>{ap.country}</span></div>
+                <div style={{ fontSize: '0.9rem', fontFamily: 'monospace', opacity: 0.7 }}>{ap.code}</div>
               </div>
             ))}
             {filteredAirports.length === 0 && (
@@ -175,7 +180,7 @@ function App() {
                   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
                   @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
               `}</style>
-      </div>
+      </div >
     );
   }
 

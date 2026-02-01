@@ -46,8 +46,8 @@ const GanttTimeline: React.FC<TimelineProps> = ({ aircraft }) => {
                     const speed = ac.velocity || 140; // Default to approach speed if 0/unknown
                     const etaMins = (distNm / (speed < 10 ? 140 : speed)) * 60;
 
-                    // Visualization scaling: 1 min = 20px
-                    const topOffset = etaMins * 20;
+                    // Visualization scaling: 1 min = 60px (Increased for better spacing)
+                    const topOffset = etaMins * 60;
 
                     return (
                         <div key={ac.icao24} style={{
