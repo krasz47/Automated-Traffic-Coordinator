@@ -1,7 +1,7 @@
 # Automated Traffic Coordinator
 
-## What it does
-The Automated Traffic Coordinator is a visualisation tool acting as a Surface Movement Radar (SMR) and Terminal Approach display. The goal is to reduce airport delays by drawing attention to specific congestion points. It actively monitors aircraft spacing and runway occupancy, and specifies how traffic should be ordered to maximise efficiency and minimise ground delays.
+## What is  it
+The Automated Traffic Coordinator is project created for ICHack 26 to work with data and decisionm-making + providing some benefit to travel as a whole. It is a visualisation tool acting as a Surface Movement Radar (SMR) and Terminal Approach display. The goal is to reduce airport delays by drawing attention to specific congestion points. It actively monitors aircraft spacing and runway occupancy, and specifies how traffic should be ordered to maximise efficiency and minimise ground delays.
 
 ## Why
 The project was inspired by a real-world travel experience. A friend of mine took a flight that had a flight time of 1 hour and 40 minutes, but upon arrival at Heathrow, they were stuck taxiing for an **hour and a half**, followed by another **hour** wait for luggage. The fact that the delays on the ground lasted longer than the flight itself highlighted a pretty big inefficiency in airport coordination that this software aims to address.
